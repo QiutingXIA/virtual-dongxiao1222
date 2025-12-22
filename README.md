@@ -6,7 +6,7 @@
 
 在线体验 (Live Demo)
 
-点击这里访问项目网页（ https://tianqiu489-del.github.io/virtual-dongxiao1222/）
+点击这里访问项目网页 https://tianqiu489-del.github.io/virtual-dongxiao1222/
 
 
 **项目简介**
