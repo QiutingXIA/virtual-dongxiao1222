@@ -416,6 +416,10 @@
         let replayTimeout = null;
         let replayGainOverride = 0; 
 
+        // Audio Tracking
+        let activeAudio = null;
+        let activeNoteIndex = 0;
+
         const CAMERA_NEAR = 65;  
         const CAMERA_FAR = 180;  
         const RECORD_SILENCE_DELAY = 1200; 
@@ -519,8 +523,6 @@
             let count = 0;
             [...holes.L, ...holes.R].forEach(v => { if(v===1) count++; });
             if (count > 6) count = 6;
-            
-            // 0 keys = 0 index (Silence)
             return count; 
         }
 
@@ -550,17 +552,21 @@
             let gain = 0;
             let isBlowing = false;
 
-            if (isObserving) {
+            // Stop loop only if observing AND NOT replaying
+            if (isObserving && !isReplaying) {
                 globalGain = 0;
                 document.getElementById('breathMeter').style.width = `0%`;
                 document.getElementById('breathVal').innerText = `Observing`;
+                // Ensure audio stops if we switch to Observe manually
+                if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; activeAudio = null; activeNoteIndex = 0; }
                 return;
             }
 
             if (isReplaying) {
                 gain = replayGainOverride;
-                isBlowing = gain > 0.1;
+                isBlowing = gain > 0.05; // Slightly lower threshold for replay continuity
             } else {
+                // Input logic
                 if (autoBlow) {
                     gain = 0.5 + Math.sin(Date.now()*0.002)*0.45; 
                     if(gain < 0) gain = 0;
@@ -575,6 +581,10 @@
                     isBlowing = true;
                 }
 
+                // Recording Logic
+                const noteIdx = getNoteIndex();
+                const now = Date.now();
+
                 if (isBlowing) {
                     if (replayTimeout) {
                         clearTimeout(replayTimeout);
@@ -587,25 +597,28 @@
                         updateStatusUI('recording');
                     }
                     
-                    const noteIdx = getNoteIndex();
-                    // Record only if sound is happening (noteIdx > 0)
+                    // Record valid notes
                     if (noteIdx > 0) {
                         const lastNote = recordedNotes[recordedNotes.length - 1];
-                        const now = Date.now();
-                        if (!lastNote || lastNote.note !== noteIdx || (now - lastNote.time > 100)) {
+                        if (!lastNote || lastNote.note !== noteIdx || (now - lastNote.time > 80)) { // Faster sampling
                              recordedNotes.push({ note: noteIdx, time: now, gain: gain });
                         }
                     }
-                    lastBreathTime = Date.now();
+                    lastBreathTime = now;
                 } else {
                     if (isRecording) {
-                        const timeSinceStop = Date.now() - lastBreathTime;
+                        const lastNote = recordedNotes[recordedNotes.length - 1];
+                        if (lastNote && lastNote.gain > 0) {
+                            recordedNotes.push({ note: 0, time: now, gain: 0 }); // Mark end of phrase
+                        }
+
+                        const timeSinceStop = now - lastBreathTime;
                         if (timeSinceStop > 1000) { 
                             isRecording = false;
                             updateStatusUI(''); 
                             if (recordedNotes.length > 0) {
                                 lastMelody = [...recordedNotes];
-                                console.log("Melody saved:", lastMelody.length, "notes");
+                                console.log("Melody saved:", lastMelody.length, "events");
                             }
                         }
                     }
@@ -621,22 +634,44 @@
             document.getElementById('breathMeter').style.width = `${gain * 100}%`;
             document.getElementById('breathVal').innerText = `${Math.floor(gain * 100)}%`;
 
-            // Only play if note index > 0
-            if (isBlowing && gain > 0.1 && currentNoteIndex > 0) {
-                const note = NOTE_MAP[currentNoteIndex];
-                if (note) {
-                    document.getElementById('noteName').innerText = note.name;
-                    const audio = audioPool[note.file];
-                    if (audio && audio.paused) {
-                        audio.volume = gain;
-                        audio.currentTime = 0;
-                        audio.play().catch(()=>{});
-                    } else if (audio) {
-                        audio.volume = gain;
-                    }
+            // === Robust Audio Playback Logic ===
+            // 1. Determine Target Note
+            let targetNoteIdx = 0;
+            if (isBlowing && gain > 0.05 && currentNoteIndex > 0) {
+                targetNoteIdx = currentNoteIndex;
+            }
+
+            // 2. Handle Note Switching or Silence
+            if (targetNoteIdx !== activeNoteIndex) {
+                // Stop previous audio
+                if (activeAudio) {
+                    activeAudio.pause();
+                    activeAudio.currentTime = 0;
+                    activeAudio = null;
                 }
-            } else {
-                 document.getElementById('noteName').innerText = "-";
+                
+                // Start new audio if not silence
+                if (targetNoteIdx > 0) {
+                    const note = NOTE_MAP[targetNoteIdx];
+                    if (note && audioPool[note.file]) {
+                        activeAudio = audioPool[note.file];
+                        activeAudio.volume = gain;
+                        activeAudio.currentTime = 0;
+                        activeAudio.play().catch(e => console.log("Play error", e));
+                        document.getElementById('noteName').innerText = note.name;
+                    }
+                } else {
+                    document.getElementById('noteName').innerText = "-";
+                }
+                activeNoteIndex = targetNoteIdx;
+            } 
+            else if (activeAudio && targetNoteIdx > 0) {
+                // 3. Same Note: Update Volume
+                activeAudio.volume = gain;
+                // Ensure it's playing if it was paused (e.g. loops)
+                if (activeAudio.paused) {
+                    activeAudio.play().catch(()=>{});
+                }
             }
         }
 
@@ -644,6 +679,9 @@
             if (isReplaying || lastMelody.length === 0) return;
             isReplaying = true;
             updateStatusUI('playing');
+
+            // Force reset active audio state to ensure fresh attack
+            if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; activeAudio = null; activeNoteIndex = 0; }
 
             const startTime = lastMelody[0].time;
             
@@ -653,13 +691,21 @@
 
                 setTimeout(() => {
                     if (!isReplaying) return; 
+                    
                     currentNoteIndex = record.note;
                     replayGainOverride = record.gain;
                     
+                    // Explicitly handle silence frames from recording
+                    if (record.gain === 0 || record.note === 0) {
+                        currentNoteIndex = 0;
+                        replayGainOverride = 0;
+                    }
+
                     if (index === lastMelody.length - 1) {
                         setTimeout(() => {
                             isReplaying = false;
                             replayGainOverride = 0;
+                            if (activeAudio) { activeAudio.pause(); activeAudio = null; activeNoteIndex = 0; }
                             updateStatusUI('');
                         }, 500 / speedFactor); 
                     }
@@ -847,6 +893,10 @@
             camera.position.z += (targetZ - camera.position.z) * 0.05;
 
             if (isObserving) {
+                // Scale Adjustment: Shrink to 0.8 as requested
+                const targetScale = 0.8;
+                roomGroup.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
+                
                 roomGroup.rotation.y += 0.005; 
                 roomGroup.rotation.x = Math.sin(time * 0.3) * 0.4; 
                 roomGroup.rotation.z = Math.cos(time * 0.2) * 0.2;
@@ -890,6 +940,9 @@
                 });
 
             } else {
+                // Return to normal scale
+                roomGroup.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+
                 roomGroup.rotation.y += 0.0015; 
                 roomGroup.rotation.x = Math.sin(time * 0.15) * 0.15; 
                 roomGroup.rotation.z = Math.cos(time * 0.1) * 0.05;
@@ -904,8 +957,10 @@
                 });
             }
 
-            // Stacking Logic (Works during Replay too)
-            if (!isObserving) {
+            // Stacking Logic (Updated to work with Replay gain)
+            // Works if globalGain > 0 (which is set by both Mic and Replay)
+            // Updated condition: Allow if NOT observing OR if we ARE replaying (even if observing)
+            if (!isObserving || isReplaying) {
                 wallMeshes.forEach(mesh => {
                     const data = mesh.userData;
                     const positions = mesh.geometry.attributes.position.array;
@@ -999,7 +1054,13 @@
         // Replay Button
         btnReplay.onclick = function() {
             if (lastMelody.length > 0) {
-                startReplay(1.5); // 1.5x speed
+                // 重置视觉堆叠效果，以便用户能再次看到“生长”的过程
+                wallMeshes.forEach(mesh => {
+                    mesh.userData.accumulatedZ.fill(0);
+                    mesh.geometry.attributes.position.needsUpdate = true;
+                });
+
+                startReplay(1.5);
             } else {
                 alert("No melody recorded yet. Blow or use manual triggers first.");
             }
@@ -1022,6 +1083,8 @@
             isRecording = false;
             isReplaying = false;
             updateStatusUI('');
+            // Reset active audio on reset
+            if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; activeAudio = null; activeNoteIndex = 0; }
         }
 
         // ================= Serial Connection =================
