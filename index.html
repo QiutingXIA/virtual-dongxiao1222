@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>气韵 · 六合</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Three.js 库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 引入 Simplex Noise 用于生成平滑地形 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@300;700&display=swap');
+
+        /* ================= Core Background & Texture ================= */
+        body { 
+            font-family: "Noto Serif SC", 'Segoe UI', Tahoma, serif;
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            background-color: #050505; 
+            color: #e0e0e0; 
+            margin: 0;
+            padding: 0;
+        }
+
+        .right-section {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            z-index: 1;
+        }
+        
+        /* 3D Canvas Container */
+        #webgl-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0; 
+            cursor: pointer; /* Hint interactive */
+        }
+
+        /* Title Decoration */
+        #title-decoration {
+            position: absolute;
+            top: 12%;
+            right: 12%;
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            font-family: 'Ma Shan Zheng', cursive;
+            font-size: 2.2rem;
+            letter-spacing: 1rem;
+            color: rgba(255, 255, 255, 0.25);
+            pointer-events: none;
+            z-index: 2;
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+            transition: opacity 1s ease;
+        }
+        
+        #ui-hint {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 0.9rem;
+            pointer-events: none;
+            z-index: 2;
+            letter-spacing: 2px;
+            font-family: "Noto Serif SC", serif;
+            text-shadow: 0 0 5px rgba(0,0,0,0.5);
+            transition: opacity 1s ease;
+            width: 100%;
+            text-align: center;
+        }
+        
+        /* Status Indicator */
+        #status-indicator {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: "Noto Serif SC", serif;
+            font-size: 1rem;
+            letter-spacing: 2px;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.3s;
+            padding: 5px 15px;
+            border-radius: 20px;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+        }
+        .status-recording { color: #ff5722; border: 1px solid rgba(255, 87, 34, 0.3); opacity: 1 !important; }
+        .status-playing { color: #00ff9d; border: 1px solid rgba(0, 255, 157, 0.3); opacity: 1 !important; }
+
+        /* Hidden Class */
+        .fade-out {
+            opacity: 0 !important;
+        }
+
+        /* ================= Left Control Panel ================= */
+        .left-section {
+            background-color: rgba(18, 18, 18, 0.85); 
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 20;
+            position: relative;
+            backdrop-filter: blur(20px);
+            color: #cccccc;
+            min-width: 320px;
+            box-shadow: 10px 0 40px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .bg-card { background-color: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255,255,255,0.05); }
+        
+        .title-font {
+            font-family: "Noto Serif SC", serif;
+            letter-spacing: 2px;
+        }
+        
+        .text-gradient {
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            background-image: linear-gradient(to right, #4caf50, #ff9800, #2196f3);
+        }
+
+        .meter-container { width: 100%; height: 6px; background: #222; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+        .meter-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #d4af37, #ff5722); transition: width 0.05s linear; }
+
+        /* ================= Flute Body ================= */
+        .flute-wrapper {
+            position: relative;
+            width: 70vh; 
+            max-width: none;
+            z-index: 10;
+            transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.8s ease;
+            transform: rotate(-90deg);
+            margin-right: -8%; 
+            animation: float 8s ease-in-out infinite;
+            filter: drop-shadow(0px 0px 30px rgba(255, 255, 255, 0.05));
+        }
+
+        .flute-wrapper.observing {
+            opacity: 0;
+            transform: rotate(-90deg) translateX(100px);
+            pointer-events: none;
+        }
+
+        @keyframes float {
+            0% { transform: rotate(-90deg) translateX(0px) translateY(0px); }
+            50% { transform: rotate(-90deg) translateX(-10px) translateY(5px); }
+            100% { transform: rotate(-90deg) translateX(0px) translateY(0px); }
+        }
+
+        .flute-img {
+            width: 100%;
+            height: auto;
+            display: block;
+            filter: brightness(0.6) contrast(1.4) grayscale(0.3); 
+        }
+
+        .hole {
+            width: 3.8%; 
+            padding-bottom: 3.8%; 
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            position: absolute;
+            transform: translate(-50%, -50%);
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 5px rgba(255,255,255,0.1);
+        }
+        
+        .hole.closed {
+            background-color: #d4af37; 
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.6);
+            border-color: #fff;
+            transform: translate(-50%, -50%) scale(1.0);
+        }
+        .hole.open {
+            background-color: rgba(0, 0, 0, 0.8); 
+        }
+
+        /* Buttons */
+        .btn-base { background-color: #1a1a1a; color: #aaa; border: 1px solid #333; transition: all 0.2s; }
+        .btn-base:hover { background-color: #2a2a2a; color: #fff; border-color: #555; }
+        
+        .btn-trigger {
+            font-family: "Noto Serif SC", serif;
+            font-size: 0.75rem;
+            padding: 6px 0;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #ccc;
+        }
+        .btn-trigger:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.3);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(255,255,255,0.1);
+        }
+        .btn-trigger:active {
+            transform: scale(0.95);
+        }
+
+        /* Mode Switch Button (Shortened) */
+        #btnModeSwitch {
+            background: linear-gradient(135deg, #2c3e50, #000000);
+            border: 1px solid #4a5568;
+            color: #a0aec0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        #btnModeSwitch:hover {
+            color: #fff;
+            border-color: #718096;
+            box-shadow: 0 0 15px rgba(100, 200, 255, 0.2);
+        }
+        #btnModeSwitch.regenerate {
+            background: linear-gradient(135deg, #562a2a, #000000); 
+            border-color: #742a2a;
+            color: #feb2b2;
+        }
+        #btnModeSwitch.regenerate:hover {
+            border-color: #fc8181;
+            box-shadow: 0 0 15px rgba(252, 129, 129, 0.3);
+        }
+        
+        /* Replay Button (Now in Right Section, Initially Hidden) */
+        #btnReplay {
+            position: absolute;
+            bottom: 80px; /* Above UI Hint */
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 15;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #e0e0e0;
+            padding: 10px 30px;
+            border-radius: 30px;
+            font-family: "Noto Serif SC", serif;
+            font-size: 1rem;
+            letter-spacing: 2px;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            display: none; /* Initially Hidden */
+            align-items: center;
+            gap: 8px;
+        }
+        #btnReplay:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.1);
+            transform: translateX(-50%) scale(1.05);
+        }
+        #btnReplay span {
+            font-weight: bold;
+        }
+
+        /* Hole Positions */
+        #hole-L4 { left: 15.9%; top: 51.6%; width: 1.9%; padding-bottom: 1.9%; }
+        #hole-L3 { left: 30.4%; top: 51.6%; width: 2.3%; padding-bottom: 2.3%; }
+        #hole-L2 { left: 35.1%; top: 51.6%; width: 2.2%; padding-bottom: 2.2%; }
+        #hole-L1 { left: 39.1%; top: 51.7%; width: 2.2%; padding-bottom: 2.2%; }
+        #hole-R4 { left: 45.8%; top: 51.9%; width: 2.5%; padding-bottom: 2.5%; }
+        #hole-R3 { left: 48.5%; top: 51.8%; width: 1.9%; padding-bottom: 1.9%; }
+        #hole-R2 { left: 52.8%; top: 51.7%; width: 1.9%; padding-bottom: 1.9%; }
+        #hole-R1 { left: 60.1%; top: 51.9%; width: 1.9%; padding-bottom: 1.9%; }
+
+    </style>
+</head>
+<body>
+    <!-- Left Control Panel -->
+    <div class="left-section flex flex-col gap-5 p-6 overflow-y-auto h-full text-sm">
+        <div>
+            <h1 class="text-3xl font-bold mb-1 text-gradient title-font">气韵 · 六合</h1>
+            <p class="text-gray-600 italic font-serif">Virtual Dongxiao & Music Space</p>
+            <div id="audioLoadStatus" class="mt-3 text-yellow-700 font-mono text-xs opacity-50">Waiting for Audio...</div>
+        </div>
+
+        <!-- Mode Switch Button -->
+        <div class="p-1">
+             <button id="btnModeSwitch" class="w-full py-4 rounded-lg font-serif text-lg font-bold transition-all duration-500 tracking-widest flex items-center justify-center gap-2">
+                 <span>⏹</span> <span id="btnModeText">Observe</span>
+             </button>
+             <div class="text-center text-xs text-gray-500 mt-1 font-mono" id="modeDesc">
+                 Switch View
+             </div>
+        </div>
+
+        <!-- Manual Trigger -->
+        <div class="p-3 rounded-xl bg-card">
+            <h2 class="font-bold mb-3 text-gray-400 font-serif border-b border-gray-700 pb-2">Manual Trigger</h2>
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="triggerPreset(1)" class="btn-trigger text-[#ffd700]">1: Earth</button>
+                <button onclick="triggerPreset(2)" class="btn-trigger text-[#2979ff]">2: Water</button>
+                <button onclick="triggerPreset(3)" class="btn-trigger text-[#00ff9d]">3: Wood</button>
+                <button onclick="triggerPreset(4)" class="btn-trigger text-[#e0e0e0]">4: Metal</button>
+                <button onclick="triggerPreset(5)" class="btn-trigger text-[#d8b4e2]">5: Void</button>
+                <button onclick="triggerPreset(6)" class="btn-trigger text-[#ff5722]">6: Fire</button>
+            </div>
+            <div class="text-xs text-gray-500 mt-2 text-center">Corresponds to keys 1-6</div>
+        </div>
+
+        <div class="flex flex-col gap-3">
+            <div class="p-3 rounded-xl bg-card">
+                <h2 class="font-bold mb-2 text-gray-500">Left Hand (Arduino L)</h2>
+                <button id="btnConnectL" class="w-full py-2 btn-base rounded transition shadow-sm font-serif">Connect Left</button>
+                <div id="statusL" class="text-xs mt-1 text-gray-600 text-center">Not Connected</div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-card">
+                <h2 class="font-bold mb-2 text-gray-500">Right Hand (Arduino R)</h2>
+                <button id="btnConnectR" class="w-full py-2 btn-base rounded transition shadow-sm font-serif">Connect Right</button>
+                <div id="statusR" class="text-xs mt-1 text-gray-600 text-center">Not Connected</div>
+            </div>
+        </div>
+
+        <!-- Audio Controls -->
+        <div class="p-4 rounded-xl bg-card shadow-inner mt-auto">
+            <button id="btnStartAudio" class="w-full py-3 bg-[#e0e0e0] text-black font-bold rounded hover:bg-white transition mb-4 shadow-lg border border-gray-500">
+                Start Interaction / Demo
+            </button>
+            
+            <div id="audioControls" class="opacity-50 pointer-events-none transition-opacity space-y-4">
+                <div>
+                    <div class="flex justify-between text-gray-500 mb-1 font-serif">
+                        <span>Breath / Qi</span>
+                        <span id="breathVal">0%</span>
+                    </div>
+                    <div class="meter-container">
+                        <div id="breathMeter" class="meter-bar"></div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-gray-500 mb-1 font-serif">Threshold</label>
+                    <input type="range" id="micThreshold" min="0" max="50" value="10" class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="autoBlow" class="w-4 h-4 rounded border-gray-600 bg-gray-800 text-white focus:ring-white">
+                    <label for="autoBlow" class="text-gray-500 select-none font-serif font-bold">Auto Demo</label>
+                </div>
+            </div>
+        </div>
+        
+        <div class="font-mono text-xs text-gray-600 text-center pt-2 border-t border-gray-800">
+            Current Note: <span id="noteName" class="text-white font-bold text-base ml-2">-</span>
+        </div>
+    </div>
+
+    <!-- Right Content -->
+    <div class="right-section">
+        <!-- Title Decoration -->
+        <div id="title-decoration">
+            道 法 自 然
+        </div>
+        
+        <!-- Status -->
+        <div id="status-indicator"></div>
+        
+        <!-- Perform Button (Initially Hidden) -->
+        <button id="btnReplay">
+             <span>↺</span> <span>Perform</span>
+        </button>
+
+        <!-- Hint -->
+        <div id="ui-hint">Qi Gathers Form · Sound Moves Elements · Void & Reality</div>
+
+        <!-- 3D Container -->
+        <div id="webgl-container"></div>
+
+        <!-- Flute Image Layer -->
+        <div class="flute-wrapper" id="fluteWrapper">
+            <img src="electronic_dongxiao.png" alt="Dongxiao" class="flute-img">
+            <!-- Virtual Holes -->
+            <div id="hole-L4" class="hole open"></div>
+            <div id="hole-L3" class="hole open"></div>
+            <div id="hole-L2" class="hole open"></div>
+            <div id="hole-L1" class="hole open"></div>
+            <div id="hole-R4" class="hole open"></div>
+            <div id="hole-R3" class="hole open"></div>
+            <div id="hole-R2" class="hole open"></div>
+            <div id="hole-R1" class="hole open"></div>
+        </div>
+    </div>
+
+    <script>
+        // ================= JS Logic =================
+        let holes = { L: [0, 0, 0, 0], R: [0, 0, 0, 0] };
+        let currentNoteIndex = 0; // Default to 0 (Silence)
+        let isAudioReady = false;
+        let globalGain = 0; 
+        let manualGain = 0; 
+        
+        // State
+        let isObserving = false; 
+        let isHovering = false; 
+
+        // Recording & Replay
+        let isRecording = false;
+        let isReplaying = false;
+        let recordedNotes = []; // Buffer for current stream
+        let lastMelody = [];    // Saved melody for replay
+        let lastBreathTime = 0;
+        let replayTimeout = null;
+        let replayGainOverride = 0; 
+
+        const CAMERA_NEAR = 65;  
+        const CAMERA_FAR = 180;  
+        const RECORD_SILENCE_DELAY = 1200; 
+
+        // Note Map: Index 1-6
+        // 0 key press -> 0 index (Silence)
+        const NOTE_MAP = [
+            null, // Index 0 (Silence)
+            { name: "Si (Earth)", file: "si.wav" }, // Index 1
+            { name: "La (Water)", file: "la.wav" }, // Index 2
+            { name: "So (Wood)", file: "so.wav" },  // Index 3
+            { name: "Mi (Metal)", file: "mi.wav" }, // Index 4
+            { name: "Re (Void)", file: "re.wav" },  // Index 5
+            { name: "Do (Fire)", file: "do.wav" }   // Index 6
+        ];
+
+        const audioPool = {};
+
+        function triggerPreset(holeCount) {
+            if (isObserving) return;
+
+            for(let i=0; i<4; i++) { holes.L[i]=0; holes.R[i]=0; }
+            const holeOrder = ['L4', 'L3', 'L2', 'L1', 'R4', 'R3', 'R2', 'R1'];
+            holeOrder.forEach(id => document.getElementById(`hole-${id}`).className = 'hole open');
+
+            for(let i=0; i<holeCount; i++) {
+                if (i < 8) {
+                    const holeId = holeOrder[i]; 
+                    document.getElementById(`hole-${holeId}`).className = 'hole closed';
+                    if(holeId.startsWith('L')) {
+                        const idx = 4 - parseInt(holeId[1]); 
+                        if (holeId === 'L4') holes.L[0] = 1;
+                        if (holeId === 'L3') holes.L[1] = 1;
+                        if (holeId === 'L2') holes.L[2] = 1;
+                        if (holeId === 'L1') holes.L[3] = 1;
+                    } else {
+                         if (holeId === 'R4') holes.R[0] = 1;
+                         if (holeId === 'R3') holes.R[1] = 1;
+                         if (holeId === 'R2') holes.R[2] = 1;
+                         if (holeId === 'R1') holes.R[3] = 1;
+                    }
+                }
+            }
+            manualGain = 1.0;
+        }
+
+        async function loadAllAudio() {
+            const filesToLoad = [...new Set(NOTE_MAP.filter(n => n).map(note => note.file))];
+            const loadStatusEl = document.getElementById('audioLoadStatus');
+            let loadedCount = 0;
+            for (const file of filesToLoad) {
+                try {
+                    const audio = new Audio(file);
+                    audio.preload = 'auto';
+                    await new Promise((resolve, reject) => {
+                        audio.addEventListener('canplaythrough', resolve, { once: true });
+                        audio.addEventListener('error', () => reject(), { once: true });
+                        audio.load();
+                        setTimeout(() => reject(), 5000); 
+                    });
+                    audioPool[file] = audio;
+                    loadedCount++;
+                    loadStatusEl.innerText = `Loaded ${loadedCount}/${filesToLoad.length}`;
+                } catch (e) { console.warn(e); }
+            }
+            isAudioReady = true;
+            loadStatusEl.innerText = "Audio Ready";
+            loadStatusEl.className = "mt-3 text-green-700 font-bold text-xs";
+        }
+
+        let audioCtx, analyser, dataArray;
+        let isAudioStarted = false;
+
+        async function initAudio() {
+            if (!isAudioReady) return alert("Audio not ready yet, please wait...");
+            if (isAudioStarted) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const source = audioCtx.createMediaStreamSource(stream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                isAudioStarted = true;
+                document.getElementById('btnStartAudio').classList.add('hidden');
+                document.getElementById('audioControls').classList.remove('opacity-50', 'pointer-events-none');
+                updateAudioLoop();
+            } catch (err) { alert("Microphone access denied: " + err); }
+        }
+
+        function getVolume() {
+            if (!analyser) return 0;
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            return sum / dataArray.length;
+        }
+
+        function getNoteIndex() {
+            let count = 0;
+            [...holes.L, ...holes.R].forEach(v => { if(v===1) count++; });
+            if (count > 6) count = 6;
+            
+            // 0 keys = 0 index (Silence)
+            return count; 
+        }
+
+        function updateStatusUI(status) {
+            const el = document.getElementById('status-indicator');
+            if (status === 'recording') {
+                el.innerText = "● Recording";
+                el.className = "status-recording";
+            } else if (status === 'playing') {
+                el.innerText = "▶ Performing";
+                el.className = "status-playing";
+            } else {
+                el.className = "";
+                el.style.opacity = 0;
+            }
+        }
+
+        function updateAudioLoop() {
+            requestAnimationFrame(updateAudioLoop);
+            
+            let vol = 0;
+            if (isAudioStarted) vol = getVolume();
+            
+            const threshold = parseInt(document.getElementById('micThreshold').value);
+            const autoBlow = document.getElementById('autoBlow').checked;
+            
+            let gain = 0;
+            let isBlowing = false;
+
+            if (isObserving) {
+                globalGain = 0;
+                document.getElementById('breathMeter').style.width = `0%`;
+                document.getElementById('breathVal').innerText = `Observing`;
+                return;
+            }
+
+            if (isReplaying) {
+                gain = replayGainOverride;
+                isBlowing = gain > 0.1;
+            } else {
+                if (autoBlow) {
+                    gain = 0.5 + Math.sin(Date.now()*0.002)*0.45; 
+                    if(gain < 0) gain = 0;
+                    isBlowing = gain > 0.1;
+                } else if (vol > threshold) {
+                    isBlowing = true;
+                    gain = Math.min((vol - threshold) / (100 - threshold), 1.0);
+                } else if (manualGain > 0) {
+                    gain = manualGain;
+                    manualGain *= 0.96; 
+                    if (manualGain < 0.01) manualGain = 0;
+                    isBlowing = true;
+                }
+
+                if (isBlowing) {
+                    if (replayTimeout) {
+                        clearTimeout(replayTimeout);
+                        replayTimeout = null;
+                    }
+                    
+                    if (!isRecording) {
+                        isRecording = true;
+                        recordedNotes = []; 
+                        updateStatusUI('recording');
+                    }
+                    
+                    const noteIdx = getNoteIndex();
+                    // Record only if sound is happening (noteIdx > 0)
+                    if (noteIdx > 0) {
+                        const lastNote = recordedNotes[recordedNotes.length - 1];
+                        const now = Date.now();
+                        if (!lastNote || lastNote.note !== noteIdx || (now - lastNote.time > 100)) {
+                             recordedNotes.push({ note: noteIdx, time: now, gain: gain });
+                        }
+                    }
+                    lastBreathTime = Date.now();
+                } else {
+                    if (isRecording) {
+                        const timeSinceStop = Date.now() - lastBreathTime;
+                        if (timeSinceStop > 1000) { 
+                            isRecording = false;
+                            updateStatusUI(''); 
+                            if (recordedNotes.length > 0) {
+                                lastMelody = [...recordedNotes];
+                                console.log("Melody saved:", lastMelody.length, "notes");
+                            }
+                        }
+                    }
+                }
+            }
+
+            globalGain = gain;
+            
+            if (!isReplaying) {
+                currentNoteIndex = getNoteIndex();
+            }
+
+            document.getElementById('breathMeter').style.width = `${gain * 100}%`;
+            document.getElementById('breathVal').innerText = `${Math.floor(gain * 100)}%`;
+
+            // Only play if note index > 0
+            if (isBlowing && gain > 0.1 && currentNoteIndex > 0) {
+                const note = NOTE_MAP[currentNoteIndex];
+                if (note) {
+                    document.getElementById('noteName').innerText = note.name;
+                    const audio = audioPool[note.file];
+                    if (audio && audio.paused) {
+                        audio.volume = gain;
+                        audio.currentTime = 0;
+                        audio.play().catch(()=>{});
+                    } else if (audio) {
+                        audio.volume = gain;
+                    }
+                }
+            } else {
+                 document.getElementById('noteName').innerText = "-";
+            }
+        }
+
+        function startReplay(speedFactor = 1.0) {
+            if (isReplaying || lastMelody.length === 0) return;
+            isReplaying = true;
+            updateStatusUI('playing');
+
+            const startTime = lastMelody[0].time;
+            
+            lastMelody.forEach((record, index) => {
+                const originalDelay = record.time - startTime;
+                const newDelay = originalDelay / speedFactor;
+
+                setTimeout(() => {
+                    if (!isReplaying) return; 
+                    currentNoteIndex = record.note;
+                    replayGainOverride = record.gain;
+                    
+                    if (index === lastMelody.length - 1) {
+                        setTimeout(() => {
+                            isReplaying = false;
+                            replayGainOverride = 0;
+                            updateStatusUI('');
+                        }, 500 / speedFactor); 
+                    }
+                }, newDelay);
+            });
+        }
+
+        // ================= THREE.JS =================
+        
+        let scene, camera, renderer;
+        let roomGroup; 
+        let wallMeshes = [];
+        let simplex = new SimplexNoise();
+        let time = 0;
+
+        const WALL_SIZE = 140;
+        const SEGMENTS = 70; 
+        
+        const COLORS = {
+            WOOD:  0x00ff9d, FIRE:  0xff3d00, EARTH: 0xffd700,
+            METAL: 0xe0e0e0, WATER: 0x2979ff, VOID:  0x9c27b0
+        };
+
+        const EXP_SCALE = 1.6; 
+
+        // Mapping:
+        // 1: Earth, 2: Water, 3: Wood, 4: Metal, 5: Void, 6: Fire
+        const WALL_CONFIG = [
+            { 
+                id: 'floor', name: 'Earth', color: COLORS.EARTH, noteIdx: [1], 
+                origPos: [0, -WALL_SIZE/2, 0], origRot: [-Math.PI/2, 0, 0],
+                explodedPos: [0, -WALL_SIZE/2 * EXP_SCALE, 0]
+            }, 
+            { 
+                id: 'ceiling', name: 'Void', color: COLORS.VOID, noteIdx: [5], 
+                origPos: [0, WALL_SIZE/2, 0], origRot: [Math.PI/2, 0, 0],
+                explodedPos: [0, WALL_SIZE/2 * EXP_SCALE, 0]
+            },    
+            { 
+                id: 'back', name: 'Water', color: COLORS.WATER, noteIdx: [2], 
+                origPos: [0, 0, -WALL_SIZE/2], origRot: [0, 0, 0],
+                explodedPos: [0, 0, -WALL_SIZE/2 * EXP_SCALE]
+            },    
+            { 
+                id: 'left', name: 'Wood', color: COLORS.WOOD, noteIdx: [3], 
+                origPos: [-WALL_SIZE/2, 0, 0], origRot: [0, Math.PI/2, 0],
+                explodedPos: [-WALL_SIZE/2 * EXP_SCALE, 0, 0]
+            }, 
+            { 
+                id: 'right', name: 'Metal', color: COLORS.METAL, noteIdx: [4], 
+                origPos: [WALL_SIZE/2, 0, 0], origRot: [0, -Math.PI/2, 0],
+                explodedPos: [WALL_SIZE/2 * EXP_SCALE, 0, 0]
+            }, 
+            { 
+                id: 'front', name: 'Fire', color: COLORS.FIRE, noteIdx: [6], 
+                origPos: [0, 0, WALL_SIZE/2], origRot: [0, Math.PI, 0],
+                explodedPos: [0, 0, WALL_SIZE/2 * EXP_SCALE]
+            }     
+        ];
+
+        function getCorners(posArr, rotArr, size) {
+            const half = size / 2;
+            const corners = [
+                new THREE.Vector3(-half, half, 0), 
+                new THREE.Vector3(half, half, 0),  
+                new THREE.Vector3(-half, -half, 0),
+                new THREE.Vector3(half, -half, 0)  
+            ];
+            
+            const euler = new THREE.Euler(rotArr[0], rotArr[1], rotArr[2]);
+            const quat = new THREE.Quaternion().setFromEuler(euler);
+            const pos = new THREE.Vector3(posArr[0], posArr[1], posArr[2]);
+            
+            return corners.map(p => p.clone().applyQuaternion(quat).add(pos));
+        }
+
+        function initThree() {
+            const container = document.getElementById('webgl-container');
+            
+            container.addEventListener('mouseenter', () => { isHovering = true; });
+            container.addEventListener('mouseleave', () => { isHovering = false; });
+            container.addEventListener('touchstart', () => { isHovering = true; });
+            container.addEventListener('touchend', () => { isHovering = false; });
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.005); 
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 0, CAMERA_NEAR); 
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            roomGroup = new THREE.Group();
+            scene.add(roomGroup);
+
+            const geometry = new THREE.PlaneGeometry(WALL_SIZE, WALL_SIZE, SEGMENTS, SEGMENTS);
+            
+            WALL_CONFIG.forEach((config) => {
+                const material = new THREE.MeshBasicMaterial({ 
+                    color: 0x333333, 
+                    wireframe: true,
+                    transparent: true,
+                    opacity: 0.1,
+                    side: THREE.DoubleSide,
+                });
+
+                const mesh = new THREE.Mesh(geometry.clone(), material);
+                mesh.position.set(...config.origPos);
+                mesh.rotation.set(...config.origRot);
+                
+                const count = mesh.geometry.attributes.position.count;
+                mesh.userData = {
+                    accumulatedZ: new Float32Array(count).fill(0), 
+                    config: config,
+                    baseColor: new THREE.Color(config.color),
+                    defaultColor: new THREE.Color(0x333333)
+                };
+
+                const lineGeo = new THREE.BufferGeometry();
+                const linePos = new Float32Array(8 * 3); 
+                lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
+                const lineMat = new THREE.LineBasicMaterial({ 
+                    color: 0xffffff, 
+                    transparent: true, 
+                    opacity: 0.3,
+                    blending: THREE.AdditiveBlending
+                });
+                const lineObj = new THREE.LineSegments(lineGeo, lineMat);
+                lineObj.visible = false; 
+                roomGroup.add(lineObj);
+                mesh.userData.lineObj = lineObj;
+
+                roomGroup.add(mesh);
+                wallMeshes.push(mesh);
+            });
+
+            addParticles();
+            window.addEventListener('resize', onWindowResize);
+            animate();
+        }
+
+        function addParticles() {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const colors = [];
+            const colorPalette = Object.values(COLORS).map(c => new THREE.Color(c));
+
+            for (let i = 0; i < 2000; i++) { 
+                vertices.push(
+                    (Math.random() - 0.5) * WALL_SIZE * 2.5, 
+                    (Math.random() - 0.5) * WALL_SIZE * 2.5,
+                    (Math.random() - 0.5) * WALL_SIZE * 2.5
+                );
+                const c = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+                colors.push(c.r, c.g, c.b);
+            }
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({ 
+                vertexColors: true, 
+                size: 0.6, 
+                opacity: 0.5, 
+                transparent: true,
+                blending: THREE.AdditiveBlending
+            });
+            const points = new THREE.Points(geometry, material);
+            roomGroup.add(points);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.015;
+
+            const targetZ = isObserving ? CAMERA_FAR : CAMERA_NEAR;
+            camera.position.z += (targetZ - camera.position.z) * 0.05;
+
+            if (isObserving) {
+                roomGroup.rotation.y += 0.005; 
+                roomGroup.rotation.x = Math.sin(time * 0.3) * 0.4; 
+                roomGroup.rotation.z = Math.cos(time * 0.2) * 0.2;
+                
+                wallMeshes.forEach(mesh => {
+                    const c = mesh.userData.config;
+                    const targetPos = isHovering ? c.explodedPos : c.origPos;
+                    
+                    mesh.position.lerp(new THREE.Vector3(...targetPos), 0.1);
+                    
+                    mesh.rotation.x += (c.origRot[0] - mesh.rotation.x) * 0.1;
+                    mesh.rotation.y += (c.origRot[1] - mesh.rotation.y) * 0.1;
+                    mesh.rotation.z += (c.origRot[2] - mesh.rotation.z) * 0.1;
+
+                    mesh.material.color.lerp(mesh.userData.baseColor, 0.1);
+                    mesh.material.opacity = 0.8;
+
+                    const lineObj = mesh.userData.lineObj;
+                    if (isHovering && mesh.position.distanceTo(new THREE.Vector3(...c.origPos)) > 1) {
+                        lineObj.visible = true;
+                        
+                        const baseCorners = getCorners(c.origPos, c.origRot, WALL_SIZE);
+                        const currCorners = getCorners([mesh.position.x, mesh.position.y, mesh.position.z], [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z], WALL_SIZE);
+                        
+                        const positions = lineObj.geometry.attributes.position.array;
+                        
+                        for(let i=0; i<4; i++) {
+                            positions[i*6+0] = baseCorners[i].x;
+                            positions[i*6+1] = baseCorners[i].y;
+                            positions[i*6+2] = baseCorners[i].z;
+                            positions[i*6+3] = currCorners[i].x;
+                            positions[i*6+4] = currCorners[i].y;
+                            positions[i*6+5] = currCorners[i].z;
+                        }
+                        
+                        lineObj.geometry.attributes.position.needsUpdate = true;
+                        lineObj.material.opacity = 0.4;
+                    } else {
+                        lineObj.visible = false;
+                    }
+                });
+
+            } else {
+                roomGroup.rotation.y += 0.0015; 
+                roomGroup.rotation.x = Math.sin(time * 0.15) * 0.15; 
+                roomGroup.rotation.z = Math.cos(time * 0.1) * 0.05;
+
+                wallMeshes.forEach(mesh => {
+                    const c = mesh.userData.config;
+                    mesh.position.lerp(new THREE.Vector3(...c.origPos), 0.05);
+                    mesh.rotation.x += (c.origRot[0] - mesh.rotation.x) * 0.05;
+                    mesh.rotation.y += (c.origRot[1] - mesh.rotation.y) * 0.05;
+                    mesh.rotation.z += (c.origRot[2] - mesh.rotation.z) * 0.05;
+                    mesh.userData.lineObj.visible = false; 
+                });
+            }
+
+            // Stacking Logic (Works during Replay too)
+            if (!isObserving) {
+                wallMeshes.forEach(mesh => {
+                    const data = mesh.userData;
+                    const positions = mesh.geometry.attributes.position.array;
+                    const count = mesh.geometry.attributes.position.count;
+                    
+                    let isActive = data.config.noteIdx.includes(currentNoteIndex) && globalGain > 0.05 && currentNoteIndex > 0;
+
+                    if (isActive) {
+                        mesh.material.color.lerp(data.baseColor, 0.1);
+                        mesh.material.opacity = 0.5 + (globalGain * 0.3);
+                    } else {
+                        mesh.material.color.lerp(data.defaultColor, 0.02);
+                        mesh.material.opacity = Math.max(0.1, mesh.material.opacity - 0.01);
+                    }
+
+                    if (isActive) {
+                        for (let i = 0; i < count; i++) {
+                            const ix = i * 3;
+                            const x = positions[ix];
+                            const y = positions[ix + 1];
+                            const noise1 = simplex.noise3D(x * 0.02, y * 0.02, time * 0.3);
+                            const noise2 = simplex.noise3D(x * 0.05, y * 0.05, time * 0.8);
+                            let growth = (Math.max(0, noise1) * 0.7 + Math.max(0, noise2) * 0.3);
+                            growth *= globalGain * 0.35;
+                            const edgeDist = Math.max(Math.abs(x), Math.abs(y)) / (WALL_SIZE/2);
+                            if (edgeDist < 0.9) {
+                                data.accumulatedZ[i] += growth * (1 - Math.pow(edgeDist, 4));
+                            }
+                        }
+                    }
+
+                    for (let i = 0; i < count; i++) {
+                        if (data.accumulatedZ[i] > 60) data.accumulatedZ[i] = 60;
+                        positions[i * 3 + 2] = data.accumulatedZ[i];
+                    }
+                    mesh.geometry.attributes.position.needsUpdate = true;
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // ================= Button & Mode Logic =================
+
+        const btnModeSwitch = document.getElementById('btnModeSwitch');
+        const btnModeText = document.getElementById('btnModeText');
+        const btnReplay = document.getElementById('btnReplay');
+        const modeDesc = document.getElementById('modeDesc');
+        const fluteWrapper = document.getElementById('fluteWrapper');
+        const titleDeco = document.getElementById('title-decoration');
+        const uiHint = document.getElementById('ui-hint');
+
+        // Mode Switch
+        btnModeSwitch.onclick = function() {
+            if (!isObserving) {
+                // Enter Observation
+                isObserving = true;
+                btnModeText.innerText = "Play"; 
+                btnModeSwitch.classList.add('regenerate');
+                btnModeSwitch.querySelector('span').innerText = "↺"; 
+                modeDesc.innerText = "Click to clear stack and reset";
+                
+                // SHOW Replay Button in Observation Mode
+                btnReplay.style.display = "flex";
+
+                fluteWrapper.classList.add('observing');
+                titleDeco.classList.add('fade-out');
+                uiHint.classList.add('fade-out');
+                uiHint.innerText = "Hover to Explode Space";
+                uiHint.classList.remove('fade-out');
+
+            } else {
+                // Reset (Exit Observation)
+                resetSpace();
+                isObserving = false;
+                btnModeText.innerText = "Observe"; 
+                btnModeSwitch.classList.remove('regenerate');
+                btnModeSwitch.querySelector('span').innerText = "⏹";
+                modeDesc.innerText = "Switch View";
+                
+                // HIDE Replay Button
+                btnReplay.style.display = "none";
+
+                fluteWrapper.classList.remove('observing');
+                titleDeco.classList.remove('fade-out');
+                uiHint.innerText = "Qi Gathers Form · Sound Moves Elements · Void & Reality";
+                uiHint.classList.remove('fade-out');
+            }
+        };
+
+        // Replay Button
+        btnReplay.onclick = function() {
+            if (lastMelody.length > 0) {
+                startReplay(1.5); // 1.5x speed
+            } else {
+                alert("No melody recorded yet. Blow or use manual triggers first.");
+            }
+        };
+
+        function resetSpace() {
+            wallMeshes.forEach(mesh => {
+                const count = mesh.geometry.attributes.position.count;
+                const positions = mesh.geometry.attributes.position.array;
+                
+                mesh.userData.accumulatedZ.fill(0);
+                
+                for (let i = 0; i < count; i++) {
+                    positions[i * 3 + 2] = 0;
+                }
+                mesh.geometry.attributes.position.needsUpdate = true;
+            });
+            recordedNotes = [];
+            lastMelody = [];
+            isRecording = false;
+            isReplaying = false;
+            updateStatusUI('');
+        }
+
+        // ================= Serial Connection =================
+        async function connectSerial(hand) {
+            if (!navigator.serial) return alert("Please use Chrome or Edge browser for serial port support.");
+            try {
+                const port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                document.getElementById(`status${hand}`).innerText = "Connected";
+                document.getElementById(`status${hand}`).classList.replace("text-gray-600", "text-green-500");
+                const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+                let buffer = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += value;
+                    const lines = buffer.split('\r\n');
+                    buffer = lines.pop();
+                    for (const line of lines) handleData(hand, line);
+                }
+            } catch (e) { console.log("Serial cancelled or failed:", e); }
+        }
+
+        function handleData(hand, line) {
+            const parts = line.trim().split(',').map(Number);
+            if (parts.length !== 4) return;
+            const target = (hand === 'L') ? holes.L : holes.R;
+            for(let i=0; i<4; i++) target[i] = parts[i];
+            
+            const prefix = (hand === 'L') ? 'L' : 'R'; 
+            document.getElementById(`hole-${prefix}4`).className = parts[0] ? 'hole closed' : 'hole open';
+            document.getElementById(`hole-${prefix}3`).className = parts[1] ? 'hole closed' : 'hole open';
+            document.getElementById(`hole-${prefix}2`).className = parts[2] ? 'hole closed' : 'hole open';
+            document.getElementById(`hole-${prefix}1`).className = parts[3] ? 'hole closed' : 'hole open';
+        }
+
+        document.getElementById('btnConnectL').onclick = () => connectSerial('L');
+        document.getElementById('btnConnectR').onclick = () => connectSerial('R');
+        document.getElementById('btnStartAudio').onclick = initAudio;
+        
+        initThree();
+        updateAudioLoop();
+        loadAllAudio();
+
+    </script>
+</body>
+</html>
