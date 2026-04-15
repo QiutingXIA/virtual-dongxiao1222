@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>气韵 · 六合 (Scroll Landscape Ver.)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@300;700&display=swap');
+
+        body { 
+            font-family: "Noto Serif SC", serif;
+            display: flex; height: 100vh; width: 100vw; overflow: hidden;
+            background-color: #050505; color: #e0e0e0; margin: 0; padding: 0;
+            transition: background-color 1.5s ease;
+        }
+
+        .right-section {
+            flex: 1; position: relative; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; overflow: hidden; z-index: 1;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #000000 100%);
+            transition: background 1.5s ease;
+        }
+        
+        body.paper-mode { background-color: #f4f1e7; color: #333; }
+        body.paper-mode .right-section {
+            background: radial-gradient(circle at center, #fcfbf8 0%, #e6e2d3 100%);
+        }
+
+        .red-sun {
+            position: absolute; top: 15%; left: 15%; width: 80px; height: 80px;
+            background-color: #bc3e3e; border-radius: 50%; filter: blur(4px);
+            opacity: 0; transition: opacity 2s ease 0.5s; pointer-events: none; z-index: 0; mix-blend-mode: multiply;
+        }
+        body.landscape-mode .red-sun { opacity: 0.85; }
+
+        .bird-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10; overflow: hidden; opacity: 0; transition: opacity 1s;
+        }
+        body.landscape-mode .bird-container { opacity: 1; }
+        .bird {
+            position: absolute; width: 8px; height: 4px;
+            border-bottom: 2px solid rgba(20, 20, 20, 0.7);
+            border-left: 2px solid rgba(20, 20, 20, 0.7);
+            transform: rotate(45deg);
+        }
+        .bird:nth-child(1) { top: 20%; animation: fly 18s linear infinite; }
+        .bird:nth-child(2) { top: 25%; animation: fly 22s linear infinite; animation-delay: 5s; transform: scale(0.8) rotate(45deg); }
+        .bird:nth-child(3) { top: 18%; animation: fly 15s linear infinite; animation-delay: 10s; transform: scale(0.6) rotate(45deg); }
+
+        @keyframes fly {
+            0% { left: 110%; transform: translateY(0) rotate(45deg); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { left: -10%; transform: translateY(-50px) rotate(45deg); opacity: 0; }
+        }
+
+        #webgl-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; cursor: pointer; }
+
+        #title-decoration {
+            position: absolute; top: 12%; right: 12%;
+            writing-mode: vertical-rl; text-orientation: upright;
+            font-family: 'Ma Shan Zheng', cursive; font-size: 2.2rem; letter-spacing: 1rem;
+            color: rgba(255, 255, 255, 0.15); pointer-events: none; z-index: 2;
+            transition: all 1.5s;
+        }
+        
+        #btnPaperMode {
+            position: absolute; bottom: 20%; right: 8%; width: 60px; height: 60px;
+            border: 2px solid rgba(255,255,255,0.2); border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            writing-mode: vertical-rl; font-family: 'Ma Shan Zheng', cursive;
+            font-size: 1.2rem; color: rgba(255,255,255,0.6); cursor: pointer; z-index: 20;
+            transition: all 0.5s; background: rgba(0,0,0,0.2);
+        }
+        #btnPaperMode.state-paper { background-color: #8b0000; color: white; border-radius: 2px; }
+        #btnPaperMode.state-scroll { background-color: #2c3e50; border-radius: 50%; }
+
+        .left-section {
+            background-color: rgba(18, 18, 18, 0.9); border-right: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 20; position: relative; color: #cccccc; min-width: 320px; max-width: 320px;
+            display: flex; flex-direction: column;
+        }
+
+        .flute-wrapper {
+            position: relative; width: 60vh; z-index: 10; transition: all 0.8s;
+            transform: rotate(-90deg); margin-right: -5%; animation: float 8s ease-in-out infinite;
+        }
+        .flute-wrapper.observing { opacity: 0; transform: rotate(-90deg) translateX(100px); pointer-events: none; }
+        @keyframes float {
+            0%, 100% { transform: rotate(-90deg) translateX(0px); }
+            50% { transform: rotate(-90deg) translateX(-10px); }
+        }
+        .flute-img { width: 100%; filter: brightness(0.6) contrast(1.4); }
+
+        .hole {
+            width: 3.8%; padding-bottom: 3.8%; border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2); position: absolute;
+            transform: translate(-50%, -50%); transition: all 0.15s;
+        }
+        .hole.closed { background-color: #d4af37; box-shadow: 0 0 15px rgba(212, 175, 55, 0.6); }
+        .hole.open { background-color: rgba(0, 0, 0, 0.8); }
+
+        .btn-trigger { font-size: 0.75rem; padding: 8px 0; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; }
+        .meter-bar { height: 6px; width: 0%; background: linear-gradient(90deg, #d4af37, #ff5722); transition: width 0.05s; }
+
+        #hole-L4 { left: 15.9%; top: 51.6%; width: 1.9%; padding-bottom: 1.9%; }
+        #hole-L3 { left: 30.4%; top: 51.6%; width: 2.3%; padding-bottom: 2.3%; }
+        #hole-L2 { left: 35.1%; top: 51.6%; width: 2.2%; padding-bottom: 2.2%; }
+        #hole-L1 { left: 39.1%; top: 51.7%; width: 2.2%; padding-bottom: 2.2%; }
+        #hole-R4 { left: 45.8%; top: 51.9%; width: 2.5%; padding-bottom: 2.5%; }
+        #hole-R3 { left: 48.5%; top: 51.8%; width: 1.9%; padding-bottom: 1.9%; }
+        #hole-R2 { left: 52.8%; top: 51.7%; width: 1.9%; padding-bottom: 1.9%; }
+        #hole-R1 { left: 60.1%; top: 51.9%; width: 1.9%; padding-bottom: 1.9%; }
+    </style>
+</head>
+<body>
+    
+    <script type="x-shader/x-vertex" id="waterVertex">
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    </script>
+    <script type="x-shader/x-fragment" id="waterFragment">
+        uniform float uTime; uniform vec3 uColor; uniform float uOpacity; varying vec2 vUv;
+        float random (in vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233)))*43758.5453123); }
+        float noise (in vec2 st) {
+            vec2 i = floor(st); vec2 f = fract(st);
+            float a = random(i); float b = random(i + vec2(1.0, 0.0));
+            float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+        }
+        void main() {
+            float flow = noise(vec2(vUv.x * 6.0 + uTime * 0.2, vUv.y * 3.0));
+            float stream = smoothstep(0.4, 0.6, flow);
+            float edgeFade = 1.0 - pow(abs(vUv.y - 0.5) * 2.0, 2.0);
+            gl_FragColor = vec4(uColor, stream * edgeFade * uOpacity);
+        }
+    </script>
+
+    <div class="left-section p-6 overflow-y-auto h-full text-sm">
+        <h1 class="text-3xl font-bold mb-1 text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-blue-500 font-serif">气韵 · 六合</h1>
+        <p class="text-gray-500 italic mb-6">Virtual Dongxiao Space</p>
+
+        <button id="btnModeSwitch" class="w-full py-4 mb-6 rounded bg-gray-800 border border-gray-700 text-gray-300 font-serif text-lg">
+            <span id="btnModeText">Observe Mode</span>
+        </button>
+
+        <div class="flex flex-col gap-3 mb-6">
+            <div class="p-3 rounded-xl bg-white/5 border border-white/5">
+                <h2 class="font-bold mb-2 text-gray-500">Left Hand</h2>
+                <button id="btnConnectL" class="w-full py-2 bg-black/50 rounded">Connect Left</button>
+                <div id="statusL" class="text-xs mt-1 text-gray-600 text-center">Not Connected</div>
+            </div>
+            <div class="p-3 rounded-xl bg-white/5 border border-white/5">
+                <h2 class="font-bold mb-2 text-gray-500">Right Hand</h2>
+                <button id="btnConnectR" class="w-full py-2 bg-black/50 rounded">Connect Right</button>
+                <div id="statusR" class="text-xs mt-1 text-gray-600 text-center">Not Connected</div>
+            </div>
+        </div>
+
+        <div class="p-4 rounded bg-white/5 mb-6">
+            <h2 class="font-bold mb-3 text-gray-400 border-b border-gray-700 pb-2">Manual Triggers</h2>
+            <div class="grid grid-cols-3 gap-2">
+                <button onclick="triggerPreset(1)" class="btn-trigger text-[#ffd700]">1: Earth</button>
+                <button onclick="triggerPreset(2)" class="btn-trigger text-[#2979ff]">2: Water</button>
+                <button onclick="triggerPreset(3)" class="btn-trigger text-[#00ff9d]">3: Wood</button>
+                <button onclick="triggerPreset(4)" class="btn-trigger text-[#e0e0e0]">4: Metal</button>
+                <button onclick="triggerPreset(5)" class="btn-trigger text-[#d8b4e2]">5: Void</button>
+                <button onclick="triggerPreset(6)" class="btn-trigger text-[#ff5722]">6: Fire</button>
+            </div>
+        </div>
+
+        <div class="mt-auto">
+            <button id="btnStartAudio" class="w-full py-3 bg-gray-200 text-black font-bold rounded hover:bg-white transition mb-4 shadow">
+                Start Experience
+            </button>
+            <div id="audioControls" class="opacity-50 pointer-events-none transition-opacity space-y-3">
+                <div class="flex justify-between text-gray-500 font-serif"><span>Qi (Breath)</span><span id="breathVal">0%</span></div>
+                <div class="h-2 bg-gray-800 rounded overflow-hidden"><div id="breathMeter" class="meter-bar"></div></div>
+                <label class="block text-gray-500 mt-4 text-xs">Mic Threshold</label>
+                <input type="range" id="micThreshold" min="0" max="50" value="10" class="w-full h-1 bg-gray-700 rounded appearance-none">
+            </div>
+        </div>
+    </div>
+
+    <div class="right-section">
+        <div class="red-sun"></div>
+        <div class="bird-container"><div class="bird"></div><div class="bird"></div><div class="bird"></div></div>
+        <div id="title-decoration">道 法 自 然</div>
+        <div id="webgl-container"></div>
+        <button id="btnPaperMode">宣纸</button>
+        <div id="ui-hint" class="absolute bottom-10 w-full text-center text-white/30 text-sm">Sound Moves Form · Void & Reality</div>
+        <div class="flute-wrapper" id="fluteWrapper">
+            <img src="electronic_dongxiao.png" alt="Dongxiao" class="flute-img">
+            <div id="hole-L4" class="hole open"></div><div id="hole-L3" class="hole open"></div><div id="hole-L2" class="hole open"></div><div id="hole-L1" class="hole open"></div>
+            <div id="hole-R4" class="hole open"></div><div id="hole-R3" class="hole open"></div><div id="hole-R2" class="hole open"></div><div id="hole-R1" class="hole open"></div>
+        </div>
+    </div>
+
+    <script>
+        let holes = { L: [0, 0, 0, 0], R: [0, 0, 0, 0] };
+        let currentNoteIndex = 0; 
+        let isAudioReady = false;
+        let globalGain = 0; 
+        let manualGain = 0; 
+        let isObserving = false; 
+        let isHovering = false;
+        let visualMode = 0; 
+
+        const NOTE_MAP = [
+            null, 
+            { name: "Si (Earth)", file: "si.wav" },
+            { name: "La (Water)", file: "la.wav" },
+            { name: "So (Wood)", file: "so.wav" },
+            { name: "Mi (Metal)", file: "mi.wav" },
+            { name: "Re (Void)", file: "re.wav" },
+            { name: "Do (Fire)", file: "do.wav" }
+        ];
+
+        const audioPool = {}; 
+
+        async function loadAllAudio() {
+            console.log("Loading audio files...");
+            const promises = NOTE_MAP.map(note => {
+                if (note && note.file) {
+                    return new Promise((resolve) => {
+                        const audio = new Audio(note.file);
+                        audio.preload = "auto";
+                        audio.oncanplaythrough = resolve;
+                        audio.onerror = () => { console.error("Failed to load: " + note.file); resolve(); };
+                        audioPool[note.file] = audio;
+                    });
+                }
+            });
+            await Promise.all(promises);
+            isAudioReady = true;
+            console.log("Audio ready.");
+        }
+
+        function triggerPreset(idx) {
+            if (isObserving) return;
+            const note = NOTE_MAP[idx];
+            if (isAudioReady && note && audioPool[note.file]) {
+                const sound = audioPool[note.file];
+                sound.currentTime = 0; 
+                sound.play().catch(e => console.warn("Playback blocked", e));
+            }
+            document.querySelectorAll('.hole').forEach(h => h.className = 'hole open');
+            currentNoteIndex = idx;
+            manualGain = 1.0;
+            if(idx === 1) {
+                const h4 = document.getElementById('hole-L4');
+                if(h4) h4.className = 'hole closed';
+            }
+        }
+
+        let audioCtx, analyser, dataArray;
+        let isAudioStarted = false;
+
+        document.getElementById('btnStartAudio').onclick = async function() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+            }
+            await loadAllAudio();
+            initAudio(); 
+            this.style.display = 'none';
+        };
+        
+        async function initAudio() {
+            if (isAudioStarted) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const source = audioCtx.createMediaStreamSource(stream);
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                isAudioStarted = true;
+                document.getElementById('audioControls').classList.remove('opacity-50', 'pointer-events-none');
+                updateAudioLoop();
+            } catch (err) { console.warn("Mic access denied, manual mode only."); updateAudioLoop(); }
+        }
+
+        function updateAudioLoop() {
+            requestAnimationFrame(updateAudioLoop);
+            let vol = 0;
+            if (analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                vol = sum / dataArray.length;
+            }
+            const threshold = parseInt(document.getElementById('micThreshold').value);
+            let gain = 0;
+            if (vol > threshold) {
+                gain = Math.min((vol - threshold) / (100 - threshold), 1.0);
+            } else if (manualGain > 0) {
+                gain = manualGain;
+                manualGain *= 0.96; 
+            }
+            globalGain = gain;
+            document.getElementById('breathMeter').style.width = `${gain * 100}%`;
+            document.getElementById('breathVal').innerText = `${Math.floor(gain * 100)}%`;
+        }
+        
+        window.addEventListener('keydown', (e) => {
+            if(e.key >= '1' && e.key <= '6') triggerPreset(parseInt(e.key));
+        });
+
+        // --- ARDUINO SERIAL ---
+        async function connectSerial(hand) {
+            if (!navigator.serial) return alert("Use Chrome/Edge for Serial support.");
+            try {
+                const port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                document.getElementById(`status${hand}`).innerText = "Connected";
+                document.getElementById(`status${hand}`).style.color = "#22c55e";
+                const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+                let buffer = "";
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += value;
+                    const lines = buffer.split('\r\n');
+                    buffer = lines.pop();
+                    for (const line of lines) handleData(hand, line);
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function handleData(hand, line) {
+            const parts = line.trim().split(',').map(Number);
+            if (parts.length !== 4) return;
+            const prefix = (hand === 'L') ? 'L' : 'R'; 
+            for(let i=0; i<4; i++) {
+                const holeId = `hole-${prefix}${4-i}`;
+                const el = document.getElementById(holeId);
+                if(el) el.className = parts[i] ? 'hole closed' : 'hole open';
+            }
+        }
+        document.getElementById('btnConnectL').onclick = () => connectSerial('L');
+        document.getElementById('btnConnectR').onclick = () => connectSerial('R');
+
+        // --- THREE.JS VISUALS ---
+        let scene, camera, renderer, roomGroup, waterMesh, waterUniforms;
+        let wallMeshes = [];
+        let simplex = new SimplexNoise();
+        let time = 0;
+        const WALL_SIZE = 140;
+        const COLORS = { WOOD: 0x00ff9d, FIRE: 0xff3d00, EARTH: 0xffd700, METAL: 0xe0e0e0, WATER: 0x2979ff, VOID: 0x9c27b0 };
+        const WALL_CONFIG = [
+            { id: 'floor', color: COLORS.EARTH, noteIdx: [1], origPos: [0, -70, 0], origRot: [-Math.PI/2, 0, 0], flatPos: [-70, 0, 0] }, 
+            { id: 'ceiling', color: COLORS.VOID, noteIdx: [5], origPos: [0, 70, 0], origRot: [Math.PI/2, 0, 0], flatPos: [350, 0, 0] },    
+            { id: 'back', color: COLORS.WATER, noteIdx: [2], origPos: [0, 0, -70], origRot: [0, 0, 0], flatPos: [70, 0, 0] },    
+            { id: 'left', color: COLORS.WOOD, noteIdx: [3], origPos: [-70, 0, 0], origRot: [0, Math.PI/2, 0], flatPos: [-350, 0, 0] }, 
+            { id: 'right', color: COLORS.METAL, noteIdx: [4], origPos: [70, 0, 0], origRot: [0, -Math.PI/2, 0], flatPos: [210, 0, 0] }, 
+            { id: 'front', color: COLORS.FIRE, noteIdx: [6], origPos: [0, 0, 70], origRot: [0, Math.PI, 0], flatPos: [-210, 0, 0] }     
+        ];
+
+        function initThree() {
+            const container = document.getElementById('webgl-container');
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.005);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
+            camera.position.z = 65;
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            roomGroup = new THREE.Group();
+            scene.add(roomGroup);
+
+            const geometry = new THREE.PlaneGeometry(WALL_SIZE, WALL_SIZE, 64, 64);
+            WALL_CONFIG.forEach(config => {
+                const material = new THREE.MeshBasicMaterial({ color: config.color, wireframe: true, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+                const mesh = new THREE.Mesh(geometry.clone(), material);
+                mesh.position.set(...config.origPos);
+                mesh.rotation.set(...config.origRot);
+                mesh.userData = { config, accumulatedZ: new Float32Array(mesh.geometry.attributes.position.count).fill(0) };
+                roomGroup.add(mesh);
+                wallMeshes.push(mesh);
+            });
+
+            waterUniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x222222) }, uOpacity: { value: 0 } };
+            waterMesh = new THREE.Mesh(new THREE.PlaneGeometry(840, 80), new THREE.ShaderMaterial({
+                uniforms: waterUniforms, vertexShader: document.getElementById('waterVertex').textContent, fragmentShader: document.getElementById('waterFragment').textContent, transparent: true
+            }));
+            waterMesh.position.set(0, -60, 0); scene.add(waterMesh);
+
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+            waterUniforms.uTime.value = time;
+            waterUniforms.uOpacity.value += ((visualMode === 2 ? 0.6 : 0) - waterUniforms.uOpacity.value) * 0.05;
+
+            if (visualMode === 2) {
+                camera.position.z += (500 - camera.position.z) * 0.05;
+                roomGroup.position.x += (-100 - roomGroup.position.x) * 0.05;
+                wallMeshes.forEach(mesh => {
+                    mesh.position.lerp(new THREE.Vector3(...mesh.userData.config.flatPos), 0.05);
+                    mesh.rotation.x += (-Math.PI/2 - mesh.rotation.x) * 0.05;
+                    mesh.material.opacity += (0.8 - mesh.material.opacity) * 0.1;
+                });
+            } else {
+                camera.position.z += (65 - camera.position.z) * 0.05;
+                roomGroup.position.x += (0 - roomGroup.position.x) * 0.1;
+                wallMeshes.forEach(mesh => {
+                    mesh.position.lerp(new THREE.Vector3(...mesh.userData.config.origPos), 0.1);
+                    const isActive = mesh.userData.config.noteIdx.includes(currentNoteIndex) && globalGain > 0.05;
+                    mesh.material.opacity += ((isActive ? 0.9 : 0.1) - mesh.material.opacity) * 0.1;
+                    if(isActive) {
+                        const pos = mesh.geometry.attributes.position.array;
+                        for(let i=0; i<pos.length/3; i++) {
+                            const n = simplex.noise3D(pos[i*3]*0.02, pos[i*3+1]*0.02, time*0.5);
+                            mesh.userData.accumulatedZ[i] = Math.min(60, mesh.userData.accumulatedZ[i] + Math.max(0, n)*globalGain*0.4);
+                            pos[i*3+2] = mesh.userData.accumulatedZ[i];
+                        }
+                        mesh.geometry.attributes.position.needsUpdate = true;
+                    }
+                });
+            }
+            renderer.render(scene, camera);
+        }
+
+        document.getElementById('btnPaperMode').onclick = () => {
+            visualMode = (visualMode + 1) % 3;
+            const btn = document.getElementById('btnPaperMode');
+            if (visualMode === 0) { btn.innerText = "宣纸"; document.body.className = ""; }
+            else if (visualMode === 1) { btn.innerText = "展卷"; document.body.className = "paper-mode"; }
+            else { btn.innerText = "归位"; document.body.className = "paper-mode landscape-mode"; }
+        };
+
+        document.getElementById('btnModeSwitch').onclick = () => {
+            isObserving = !isObserving;
+            document.getElementById('btnModeText').innerText = isObserving ? "Back to Play" : "Observe Mode";
+            document.getElementById('fluteWrapper').classList.toggle('observing');
+        };
+
+        initThree();
+    </script>
+</body>
+</html>
