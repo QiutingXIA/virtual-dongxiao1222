@@ -393,14 +393,35 @@
             if(idx === 1) document.getElementById('hole-L4').className = 'hole closed';
         }
 
+     const audioPool = {}; 
         async function loadAllAudio() {
+            console.log("开始加载音频...");
+            NOTE_MAP.forEach(note => {
+                if (note && note.file) {
+                    const audio = new Audio(note.file);
+                    audio.preload = "auto";
+                    // 如果加载失败，在控制台报错提示
+                    audio.onerror = () => console.error("无法加载文件: " + note.file);
+                    audioPool[note.file] = audio;
+                }
+            });
             isAudioReady = true;
             document.getElementById('audioControls').classList.remove('opacity-50', 'pointer-events-none');
         }
 
-        let audioCtx, analyser, dataArray;
-        let isAudioStarted = false;
-
+// 关键：手动绑定按钮，强制浏览器开启音频通路
+        document.getElementById('btnStartAudio').onclick = async function() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+            }
+            console.log("音频上下文已激活");
+            initAudio(); // 运行你原本的麦克风逻辑
+            this.style.display = 'none'; // 隐藏按钮防止重复点击
+        };
+        
         async function initAudio() {
             if (isAudioStarted) return;
             try {
