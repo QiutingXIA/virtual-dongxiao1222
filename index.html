@@ -385,15 +385,32 @@
         const audioPool = {};
         
         // --- Interaction Logic ---
-        function triggerPreset(idx) {
+       function triggerPreset(idx) {
             if (isObserving) return;
+            
+            // 新增：播放对应的音频文件
+            const note = NOTE_MAP[idx];
+            if (isAudioReady && note && audioPool[note.file]) {
+                const sound = audioPool[note.file];
+                sound.currentTime = 0; 
+                sound.play().catch(e => console.log("Audio blocked", e));
+            }
+
             document.querySelectorAll('.hole').forEach(h => h.className = 'hole open');
             currentNoteIndex = idx;
             manualGain = 1.0;
             if(idx === 1) document.getElementById('hole-L4').className = 'hole closed';
         }
 
+        const audioPool = {}; 
         async function loadAllAudio() {
+            NOTE_MAP.forEach(note => {
+                if (note && note.file) {
+                    const audio = new Audio(note.file);
+                    audio.preload = "auto";
+                    audioPool[note.file] = audio;
+                }
+            });
             isAudioReady = true;
             document.getElementById('audioControls').classList.remove('opacity-50', 'pointer-events-none');
         }
@@ -401,6 +418,15 @@
         let audioCtx, analyser, dataArray;
         let isAudioStarted = false;
 
+// 专门修复 GitHub 部署后没声音的触发逻辑
+        document.getElementById('btnStartAudio').onclick = async function() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            await audioCtx.resume(); // 这一行最关键，激活声音
+            initAudio(); // 运行你原本的麦克风初始化
+        };
+        
         async function initAudio() {
             if (isAudioStarted) return;
             try {
